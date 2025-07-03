@@ -2,7 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const { code } = req.query; // Removed unused 'state'
+  const { code } = req.query;
 
   if (!code || typeof code !== "string") {
     return res.status(400).send("Error: Missing authorization code.");
@@ -33,11 +33,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         </body>
       </html>
     `);
-  } catch (err) {
-    console.error(
-      "❌ Token exchange error:",
-      (err as any)?.response?.data || (err as any)?.message
-    );
+  } catch (err: unknown) {
+    if (err && typeof err === "object" && "response" in err) {
+      console.error("❌ Token exchange error:", (err as any)?.response?.data);
+    } else {
+      console.error("❌ Token exchange error:", err);
+    }
     res.status(500).send("Failed to exchange code for tokens.");
   }
 }
