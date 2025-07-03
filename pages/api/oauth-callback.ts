@@ -14,14 +14,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       new URLSearchParams({
         grant_type: "authorization_code",
         code,
-        redirect_uri: "https://api.well-thread.com/api/oauth-callback",
-        client_id: "8d35c51b-441b-4e69-94b7-aa5ff8def968",
+        redirect_uri: "https://api.well-thread.com/api/oauth-callback", // must match Epic registration
+        client_id: "8d35c51b-441b-4e69-94b7-aa5ff8def968",             // your sandbox client ID
       }),
       { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
     );
 
     const tokens = tokenRes.data;
     console.log("✅ Epic tokens received:", tokens);
+
+    // 🔴 TODO: Save tokens tied to your user in your database (e.g., Supabase)
 
     res.send(`
       <html>
@@ -40,8 +42,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       typeof err.response === "object" &&
       "data" in err.response
     ) {
-      // @ts-expect-error response might not have type info but we ignore it safely
-      console.error("❌ Token exchange error:", err.response.data);
+      console.error("❌ Token exchange error:", (err as { response: { data: any } }).response.data);
     } else {
       console.error("❌ Token exchange error:", err);
     }
