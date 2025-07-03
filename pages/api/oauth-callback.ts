@@ -42,7 +42,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       typeof err.response === "object" &&
       "data" in err.response
     ) {
-      console.error("❌ Token exchange error:", (err as { response: { data: any } }).response.data);
+      console.error("❌ Token exchange error:", (err as { response: { data: unknown } }).response.data);
     } else {
       console.error("❌ Token exchange error:", err);
     }
