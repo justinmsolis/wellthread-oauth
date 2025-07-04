@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 
-// Read your environment variables at the top
 const clientId = process.env.EPIC_CLIENT_ID!;
 const clientSecret = process.env.EPIC_CLIENT_SECRET!;
 const redirectUri = process.env.EPIC_REDIRECT_URI!;
@@ -11,12 +10,16 @@ export async function GET(req: NextRequest) {
 
   if (error) {
     console.error("Epic returned an error:", error);
-    return NextResponse.redirect("/error?reason=" + error);
+    return NextResponse.redirect(
+      new URL(`/error?reason=${encodeURIComponent(error)}`, req.nextUrl.origin)
+    );
   }
 
   if (!code) {
     console.error("No code found in Epic redirect");
-    return NextResponse.redirect("/error?reason=missing_code");
+    return NextResponse.redirect(
+      new URL("/error?reason=missing_code", req.nextUrl.origin)
+    );
   }
 
   const tokenEndpoint = "https://fhir.epic.com/interconnect-fhir-oauth/oauth2/token";
@@ -41,12 +44,16 @@ export async function GET(req: NextRequest) {
   if (!res.ok) {
     const errorText = await res.text();
     console.error("Failed to exchange code:", errorText);
-    return NextResponse.redirect("/error?reason=token_exchange_failed");
+    return NextResponse.redirect(
+      new URL("/error?reason=token_exchange_failed", req.nextUrl.origin)
+    );
   }
 
   const tokenResponse = await res.json();
   console.log("Tokens received:", tokenResponse);
 
-  // TODO: Store tokens securely
-  return NextResponse.redirect("/success");
+  // TODO: Store tokens securely in your database or session
+  return NextResponse.redirect(
+    new URL("/success", req.nextUrl.origin)
+  );
 }
