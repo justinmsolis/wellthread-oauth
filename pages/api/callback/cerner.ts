@@ -2,7 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import axios from "axios";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const { code, state } = req.query;
+  const { code } = req.query; // Removed 'state' since it's not used
 
   if (!code) {
     console.error("Missing authorization code.");
@@ -28,12 +28,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const tokens = tokenResponse.data;
     console.log("Cerner Token Response:", tokens);
 
-    // TODO: Store tokens securely in your DB linked to the user session
+    // TODO: Store tokens securely linked to user session or database
 
-    // Redirect to your app dashboard or success page
+    // Redirect to success page or dashboard
     return res.redirect("/success");
-  } catch (error: any) {
-    console.error("Token exchange failed:", error.response?.data || error.message);
-    return res.status(500).json({ error: "Token exchange failed.", details: error.response?.data });
+  } catch (error) {
+    const err = error as { response?: { data: unknown }; message: string };
+    console.error("Token exchange failed:", err.response?.data || err.message);
+    return res.status(500).json({ error: "Token exchange failed.", details: err.response?.data });
   }
 }
