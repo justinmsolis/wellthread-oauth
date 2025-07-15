@@ -8,22 +8,30 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(400).send("Error: Missing authorization code.");
   }
 
+  const clientId = process.env.EPIC_CLIENT_ID!;
+  const clientSecret = process.env.EPIC_CLIENT_SECRET!;
+  const redirectUri = process.env.EPIC_REDIRECT_URI!;
+
+  const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
+
   try {
     const tokenRes = await axios.post(
       "https://fhir.epic.com/interconnect-fhir-oauth/oauth2/token",
       new URLSearchParams({
         grant_type: "authorization_code",
         code,
-        redirect_uri: "https://api.well-thread.com/api/oauth-callback", // must match Epic registration
-        client_id: "8d35c51b-441b-4e69-94b7-aa5ff8def968",             // your sandbox client ID
+        redirect_uri: redirectUri,   // Should match your proxy redirect URI
       }),
-      { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
+      {
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Authorization: `Basic ${basicAuth}`,   // 🔥 This is the key fix
+        },
+      }
     );
 
     const tokens = tokenRes.data;
     console.log("✅ Epic tokens received:", tokens);
-
-    // 🔴 TODO: Save tokens tied to your user in your database (e.g., Supabase)
 
     res.send(`
       <html>
@@ -33,19 +41,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         </body>
       </html>
     `);
-  } catch (err: unknown) {
-    if (
-      err &&
-      typeof err === "object" &&
-      "response" in err &&
-      err.response &&
-      typeof err.response === "object" &&
-      "data" in err.response
-    ) {
-      console.error("❌ Token exchange error:", (err as { response: { data: unknown } }).response.data);
-    } else {
-      console.error("❌ Token exchange error:", err);
-    }
+  } catch (err: any) {
+    console.error("❌ Token exchange error:", err?.response?.data || err.message);
     res.status(500).send("Failed to exchange code for tokens.");
   }
 }
