@@ -115,13 +115,13 @@ export async function GET(req: Request) {
 
     if (!patientKey) {
       console.warn(`⚠️ No matching sandbox patient found for FHIR ID ${patientFhirId}. Skipping resource fetch.`);
-      return NextResponse.redirect('https://app.well-thread.com/HomeInsightsScreen');
+      return NextResponse.redirect('https://app.well-thread.com/');
     }
 
     // 6. Fetch & save clinical data
     await fetchAndSavePatientResources(patientKey, accessToken);
 
-    return NextResponse.redirect('https://app.well-thread.com/HomeInsightsScreen');
+    return NextResponse.redirect('https://app.well-thread.com/');
   } catch (error: any) {
     console.error('❌ OAuth flow failed:', error.response?.data || error.message);
     return NextResponse.redirect('https://app.well-thread.com/error');
