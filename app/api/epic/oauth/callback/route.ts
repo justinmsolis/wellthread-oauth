@@ -12,6 +12,34 @@ const SUPABASE_URL = process.env.SUPABASE_URL!;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY!);
 
+// Hardcoded Epic sandbox patients
+const PATIENTS = {
+  camila_lopez: {
+    name: "Camila Lopez",
+    fhir_id: "erXuFYUfucBZaryVksYEcMg3",
+    external_id: "Z6129",
+    mrn: "203713",
+    username: "fhircamila",
+    password: "epicepic1",
+  },
+  derrick_lin: {
+    name: "Derrick Lin",
+    fhir_id: "eq081-VQEgP8drUUqCWzHfw3",
+    external_id: "Z6127",
+    mrn: "203711",
+    username: "fhirderrick",
+    password: "epicepic1",
+  },
+  desiree_powell: {
+    name: "Desiree Powell",
+    fhir_id: "eAB3mDlBBcyUKviyzrxsnAw3",
+    external_id: "Z6130",
+    mrn: "203714",
+    username: "fhirdesiree",
+    password: "epicepic1",
+  },
+} as const;
+
 // OAuth Callback Route
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -49,7 +77,17 @@ export async function GET(req: Request) {
     const patientName = patient.name?.[0]?.text || `${patient.name?.[0]?.given?.[0] ?? 'Unknown'} ${patient.name?.[0]?.family ?? ''}`;
     console.log(`✅ Logged in as Epic patient: ${patientName} (FHIR ID: ${patientFhirId})`);
 
-    await fetchAndSavePatientResources(patientFhirId, accessToken);
+    // Match patientFhirId to a hardcoded patient
+    const patientKey = Object.keys(PATIENTS).find(
+      key => PATIENTS[key as keyof typeof PATIENTS].fhir_id === patientFhirId
+    ) as keyof typeof PATIENTS | undefined;
+
+    if (!patientKey) {
+      console.warn(`⚠️ No matching sandbox patient found for FHIR ID ${patientFhirId}. Skipping resource fetch.`);
+      return NextResponse.redirect('https://app.well-thread.com/HomeInsightsScreen');
+    }
+
+    await fetchAndSavePatientResources(patientKey, accessToken);
 
     return NextResponse.redirect('https://app.well-thread.com/HomeInsightsScreen');
   } catch (error: any) {
@@ -83,12 +121,10 @@ async function fetchAndSavePatientResources(patientKey: keyof typeof PATIENTS, a
     console.log(`🔄 Fetching ${type} for ${patient.name}...`);
 
     const data = await fetchEpicResource(type, headers);
-
     const entries = data?.entry || [];
 
     console.log(`📦 ${entries.length} ${type} entries returned from Epic`);
 
-    // Always attempt upsert — even if entries is empty
     if (entries.length > 0) {
       const parsed = entries.map((item: any) => ({
         id: item.resource.id || item.fullUrl || uuidv4(),
@@ -127,6 +163,7 @@ async function fetchEpicResource(resourceType: string, headers: any) {
     return null;
   }
 }
+
 
 
 
