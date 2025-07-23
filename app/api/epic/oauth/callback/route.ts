@@ -94,7 +94,7 @@ export async function GET(req: Request) {
 
     if (!patientFhirId) {
       console.warn('⚠️ Token response did not include a patient ID. tokenData=', tokenData);
-      return NextResponse.redirect('https://app.well-thread.com/HomeInsightsScreen');
+      return NextResponse.redirect('https://app.well-thread.com/');
     }
 
     // 4. Fetch the full Patient resource
