@@ -52,6 +52,7 @@ const PATIENTS = {
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const code = url.searchParams.get('code');
+  const codeVerifier = url.searchParams.get('code_verifier');
   const isIOSApp = url.searchParams.get('ios_app') === 'true';
 
   if (!code) {
@@ -64,7 +65,10 @@ export async function GET(req: Request) {
   }
 
   try {
-    console.log('🔍 Epic OAuth callback received with code:', code.substring(0, 20) + '...');
+    console.log('🔍 Epic OAuth callback received:');
+    console.log('   - code:', code.substring(0, 20) + '...');
+    console.log('   - code_verifier:', codeVerifier ? codeVerifier.substring(0, 20) + '...' : 'none');
+    console.log('   - isIOSApp:', isIOSApp);
 
     // 1. Exchange code for access token
     const params = new URLSearchParams({
@@ -74,6 +78,15 @@ export async function GET(req: Request) {
       client_id: CLIENT_ID,
       client_secret: CLIENT_SECRET,
     });
+
+    // Add code_verifier if provided (for PKCE)
+    if (codeVerifier) {
+      params.append('code_verifier', codeVerifier);
+    }
+
+    console.log('🔍 Sending to Epic:');
+    console.log('   - URL:', EPIC_TOKEN_URL);
+    console.log('   - params:', params.toString());
 
     const tokenResponse = await axios.post(EPIC_TOKEN_URL, params);
     const tokenData = tokenResponse.data;
