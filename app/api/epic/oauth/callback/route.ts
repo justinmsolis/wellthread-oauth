@@ -48,18 +48,25 @@ const PATIENTS = {
 } as const;
 
 // -----------------------------------------------------------------------------
-// OAuth Callback Route
+// OAuth Callback Route - Handles both web redirects and iOS app calls
 // -----------------------------------------------------------------------------
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const code = url.searchParams.get('code');
+  const isIOSApp = url.searchParams.get('ios_app') === 'true';
 
   if (!code) {
     console.error('❌ Missing authorization code.');
-    return NextResponse.redirect('https://app.well-thread.com/error');
+    if (isIOSApp) {
+      return NextResponse.json({ error: 'Missing authorization code' }, { status: 400 });
+    } else {
+      return NextResponse.redirect('https://app.well-thread.com/error');
+    }
   }
 
   try {
+    console.log('🔍 Epic OAuth callback received with code:', code.substring(0, 20) + '...');
+
     // 1. Exchange code for access token
     const params = new URLSearchParams({
       grant_type: 'authorization_code',
@@ -75,9 +82,7 @@ export async function GET(req: Request) {
     console.log('✅ OAuth token exchange successful');
 
     // 2. Extract patient FHIR ID from token response
-    // SMART spec: 'patient' is common. Epic variants may include 'patient_id'.
-    let patientFhirId: string | undefined =
-      tokenData.patient || tokenData.patient_id;
+    let patientFhirId: string | undefined = tokenData.patient || tokenData.patient_id;
 
     // 3. If still missing, try to decode id_token (if present) to look for a `patient` claim
     if (!patientFhirId && tokenData.id_token) {
@@ -94,7 +99,11 @@ export async function GET(req: Request) {
 
     if (!patientFhirId) {
       console.warn('⚠️ Token response did not include a patient ID. tokenData=', tokenData);
-      return NextResponse.redirect('https://app.well-thread.com/');
+      if (isIOSApp) {
+        return NextResponse.json({ error: 'No patient ID found' }, { status: 400 });
+      } else {
+        return NextResponse.redirect('https://app.well-thread.com/');
+      }
     }
 
     // 4. Fetch the full Patient resource
@@ -115,16 +124,45 @@ export async function GET(req: Request) {
 
     if (!patientKey) {
       console.warn(`⚠️ No matching sandbox patient found for FHIR ID ${patientFhirId}. Skipping resource fetch.`);
-      return NextResponse.redirect('https://app.well-thread.com/');
+      if (isIOSApp) {
+        return NextResponse.json({ 
+          success: true,
+          access_token: accessToken,
+          patient_id: patientFhirId,
+          patient_info: { id: patientFhirId, name: patientName },
+          message: 'Epic authentication successful! You can now use the chatbot.'
+        });
+      } else {
+        return NextResponse.redirect('https://app.well-thread.com/');
+      }
     }
 
     // 6. Fetch & save clinical data
     await fetchAndSavePatientResources(patientKey, accessToken);
 
-    return NextResponse.redirect('https://app.well-thread.com/');
+    // Return appropriate response based on caller
+    if (isIOSApp) {
+      return NextResponse.json({
+        success: true,
+        access_token: accessToken,
+        patient_id: patientFhirId,
+        patient_info: { id: patientFhirId, name: patientName },
+        message: 'Epic authentication successful! You can now use the chatbot.'
+      });
+    } else {
+      return NextResponse.redirect('https://app.well-thread.com/');
+    }
+
   } catch (error: any) {
     console.error('❌ OAuth flow failed:', error.response?.data || error.message);
-    return NextResponse.redirect('https://app.well-thread.com/error');
+    if (isIOSApp) {
+      return NextResponse.json({ 
+        error: 'Epic authentication failed',
+        details: error.response?.data || error.message
+      }, { status: 400 });
+    } else {
+      return NextResponse.redirect('https://app.well-thread.com/error');
+    }
   }
 }
 
@@ -141,7 +179,7 @@ async function fetchAndSavePatientResources(
     Accept: 'application/fhir+json',
   };
 
-  // NOTE: These are broad pulls; we’ll refine with ?patient= search params later.
+  // NOTE: These are broad pulls; we'll refine with ?patient= search params later.
   const resourceTypes = [
     { type: "MedicationRequest", table: "medication_requests" },
     { type: "Medication", table: "medications" },
@@ -236,7 +274,7 @@ async function fetchEpicResource(
     console.error(`❌ Failed to fetch ${resourceType}:`, error.response?.data || error.message);
     return null;
   }
-}
+} 
 
 
 
