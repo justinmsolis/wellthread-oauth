@@ -10,7 +10,6 @@ const EPIC_BASE = 'https://fhir.epic.com/interconnect-fhir-oauth/api/FHIR/R4';
 const EPIC_TOKEN_URL = 'https://fhir.epic.com/interconnect-fhir-oauth/oauth2/token';
 const CLIENT_ID = process.env.EPIC_CLIENT_ID!;
 const CLIENT_SECRET = process.env.EPIC_CLIENT_SECRET!;
-const REDIRECT_URI = process.env.EPIC_REDIRECT_URI!;
 const SUPABASE_URL = process.env.SUPABASE_URL!;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
@@ -71,7 +70,7 @@ export async function GET(req: Request) {
     const params = new URLSearchParams({
       grant_type: 'authorization_code',
       code,
-      redirect_uri: REDIRECT_URI,
+      redirect_uri: 'formfiller://epic-oauth-callback', // Use the same redirect URI as iOS app
       client_id: CLIENT_ID,
       client_secret: CLIENT_SECRET,
     });
@@ -275,7 +274,6 @@ async function fetchEpicResource(
     return null;
   }
 } 
-
 
 
 
