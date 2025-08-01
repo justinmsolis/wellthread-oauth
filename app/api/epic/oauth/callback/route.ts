@@ -16,35 +16,8 @@ const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY!);
 
 // -----------------------------------------------------------------------------
-// Hardcoded Epic sandbox patients (add more as needed)
-// NOTE: fhir_id MUST match Epic's patient ID for resource fetches to work.
+// Epic OAuth Configuration
 // -----------------------------------------------------------------------------
-const PATIENTS = {
-  camila_lopez: {
-    name: "Camila Lopez",
-    fhir_id: "erXuFYUfucBZaryVksYEcMg3",
-    external_id: "Z6129",
-    mrn: "203713",
-    username: "fhircamila",
-    password: "epicepic1",
-  },
-  derrick_lin: {
-    name: "Derrick Lin",
-    fhir_id: "eq081-VQEgP8drUUqCWzHfw3",
-    external_id: "Z6127",
-    mrn: "203711",
-    username: "fhirderrick",
-    password: "epicepic1",
-  },
-  desiree_powell: {
-    name: "Desiree Powell",
-    fhir_id: "eAB3mDlBBcyUKviyzrxsnAw3",
-    external_id: "Z6130",
-    mrn: "203714",
-    username: "fhirdesiree",
-    password: "epicepic1",
-  },
-} as const;
 
 // -----------------------------------------------------------------------------
 // OAuth Callback Route - Handles both web redirects and iOS app calls
@@ -129,13 +102,15 @@ export async function GET(req: Request) {
 
     console.log(`✅ Logged in as Epic patient: ${patientName} (FHIR ID: ${patientFhirId})`);
 
-    // 5. Map FHIR ID to hardcoded sandbox patient
-    const patientKey = Object.keys(PATIENTS).find(
-      key => PATIENTS[key as keyof typeof PATIENTS].fhir_id === patientFhirId
-    ) as keyof typeof PATIENTS | undefined;
+    // 5. Look up patient in Supabase
+    const { data: patientData, error: patientError } = await supabase
+      .from('patients')
+      .select('*')
+      .eq('patient_fhir_id', patientFhirId)
+      .single();
 
-    if (!patientKey) {
-      console.warn(`⚠️ No matching sandbox patient found for FHIR ID ${patientFhirId}. Skipping resource fetch.`);
+    if (patientError || !patientData) {
+      console.warn(`⚠️ No matching patient found in Supabase for FHIR ID ${patientFhirId}. Skipping resource fetch.`);
       if (isIOSApp) {
         return NextResponse.json({ 
           success: true,
@@ -149,8 +124,14 @@ export async function GET(req: Request) {
       }
     }
 
+    // Extract patient info from resource_data
+    const patientResourceData = patientData.resource_data;
+    const finalPatientName = patientResourceData?.name?.[0]?.text || patientName;
+
+    console.log(`✅ Found patient in Supabase: ${finalPatientName} (${patientFhirId})`);
+
     // 6. Fetch & save clinical data
-    await fetchAndSavePatientResources(patientKey, accessToken);
+    await fetchAndSavePatientResources(patientData, accessToken);
 
     // Return appropriate response based on caller
     if (isIOSApp) {
@@ -158,7 +139,7 @@ export async function GET(req: Request) {
         success: true,
         access_token: accessToken,
         patient_id: patientFhirId,
-        patient_info: { id: patientFhirId, name: patientName },
+        patient_info: { id: patientFhirId, name: finalPatientName },
         message: 'Epic authentication successful! You can now use the chatbot.'
       });
     } else {
@@ -182,14 +163,15 @@ export async function GET(req: Request) {
 // Fetch and Save Resources for Patient
 // -----------------------------------------------------------------------------
 async function fetchAndSavePatientResources(
-  patientKey: keyof typeof PATIENTS,
+  patientData: any,
   accessToken: string
 ) {
-  const patient = PATIENTS[patientKey];
   const headers = {
     Authorization: `Bearer ${accessToken}`,
     Accept: 'application/fhir+json',
   };
+
+  console.log(`🔍 Fetching resources for patient: ${patientData.resource_data?.name?.[0]?.text || 'Unknown'} (${patientData.patient_fhir_id})`);
 
   // NOTE: These are broad pulls; we'll refine with ?patient= search params later.
   const resourceTypes = [
@@ -206,19 +188,20 @@ async function fetchAndSavePatientResources(
   ];
 
   for (const { type, table } of resourceTypes) {
-    console.log(`🔄 Fetching ${type} for ${patient.name}...`);
+    const patientName = patientData.resource_data?.name?.[0]?.text || 'Unknown';
+    console.log(`🔄 Fetching ${type} for ${patientName}...`);
 
     // IMPORTANT: Use patient search param to limit results to this patient
-    const data = await fetchEpicResource(type, headers, patient.fhir_id);
+    const data = await fetchEpicResource(type, headers, patientData.patient_fhir_id);
     const entries = data?.entry || [];
 
-    console.log(`📦 ${entries.length} ${type} entries returned from Epic for ${patient.name}`);
+    console.log(`📦 ${entries.length} ${type} entries returned from Epic for ${patientName}`);
 
     // Always upsert even if empty (parsing happens only when entries > 0)
     if (entries.length > 0) {
       const parsed = entries.map((item: any) => ({
         id: item.resource.id || item.fullUrl || uuidv4(),
-        patient_fhir_id: patient.fhir_id,
+        patient_fhir_id: patientData.patient_fhir_id,
         resource_data: item.resource,
         status: (item.resource as any).status || null,
         created_at: new Date().toISOString(),
@@ -229,7 +212,7 @@ async function fetchAndSavePatientResources(
       if (error) {
         console.error(`❌ Supabase upsert failed for ${type}:`, error);
       } else {
-        console.log(`✅ Supabase upsert succeeded: ${parsed.length} ${type} for ${patient.name}`);
+        console.log(`✅ Supabase upsert succeeded: ${parsed.length} ${type} for ${patientName}`);
       }
     } else {
       console.warn(`⚠️ No entries to upsert for ${type}. Table may remain empty.`);
@@ -287,7 +270,6 @@ async function fetchEpicResource(
     return null;
   }
 } 
-
 
 
 
