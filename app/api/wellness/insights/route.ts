@@ -12,7 +12,7 @@ const openai = new OpenAI({
 })
 
 // =============================================
-// AI INSIGHTS ENDPOINTS
+// AI INSIGHTS ENDPOINTS - Updated to fix build errors
 // =============================================
 
 // GET /api/wellness/insights - Get AI insights
