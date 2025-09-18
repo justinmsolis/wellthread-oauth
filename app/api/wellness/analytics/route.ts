@@ -1,9 +1,13 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
-const supabase = createClient(supabaseUrl, supabaseServiceKey)
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+// Only create Supabase client if environment variables are available
+const supabase = supabaseUrl && supabaseServiceKey 
+  ? createClient(supabaseUrl, supabaseServiceKey)
+  : null
 
 // =============================================
 // ANALYTICS AND TRENDS ENDPOINTS
@@ -12,6 +16,14 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey)
 // GET /api/wellness/analytics - Get analytics data
 export async function GET(request: NextRequest) {
   try {
+    // Check if Supabase is configured
+    if (!supabase) {
+      return NextResponse.json(
+        { error: 'Supabase not configured. Please set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY environment variables.' }, 
+        { status: 500 }
+      )
+    }
+
     const { searchParams } = new URL(request.url)
     const userId = searchParams.get('userId')
     const goalId = searchParams.get('goalId')
@@ -53,7 +65,7 @@ export async function GET(request: NextRequest) {
 
 async function getTrends(userId: string, goalId: string | null, dataType: string | null, days: number, startDate: Date) {
   // Get health data for the specified period
-  const { data: healthData, error } = await supabase
+  const { data: healthData, error } = await supabase!
     .from('health_data')
     .select('*')
     .eq('user_id', userId)
@@ -94,7 +106,7 @@ async function getTrends(userId: string, goalId: string | null, dataType: string
 
 async function getCorrelations(userId: string, goalId: string | null, startDate: Date) {
   // Get health data for correlation analysis
-  const { data: healthData, error } = await supabase
+  const { data: healthData, error } = await supabase!
     .from('health_data')
     .select('*')
     .eq('user_id', userId)
@@ -126,7 +138,7 @@ async function getCorrelations(userId: string, goalId: string | null, startDate:
 
 async function getSummary(userId: string, goalId: string | null, startDate: Date) {
   // Get health data summary
-  const { data: healthData, error } = await supabase
+  const { data: healthData, error } = await supabase!
     .from('health_data')
     .select('*')
     .eq('user_id', userId)
