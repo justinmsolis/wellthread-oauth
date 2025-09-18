@@ -9,11 +9,13 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey)
 // DASHBOARD ENDPOINTS
 // =============================================
 
-// GET /api/wellness/dashboard - Get user dashboard data
+// GET /api/wellness/dashboard - Get dashboard data
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const userId = searchParams.get('userId')
+    const goalId = searchParams.get('goalId')
+    const endpoint = searchParams.get('endpoint') || 'overview'
 
     if (!userId) {
       return NextResponse.json(
@@ -22,114 +24,18 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Get user profile
-    const { data: user, error: userError } = await supabase
-      .from('users')
-      .select('id, first_name, last_name, email, last_login')
-      .eq('id', userId)
-      .single()
-
-    if (userError) {
-      console.error('Error fetching user:', userError)
-      return NextResponse.json(
-        { error: 'User not found' }, 
-        { status: 404 }
-      )
+    // Route to different dashboard functions based on endpoint
+    switch (endpoint) {
+      case 'overview':
+        return await getDashboardOverview(userId, goalId)
+      case 'summary':
+        return await getDashboardSummary(userId, goalId)
+      default:
+        return await getDashboardOverview(userId, goalId)
     }
-
-    // Get active goals
-    const { data: activeGoals, error: goalsError } = await supabase
-      .from('health_goals')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('status', 'active')
-      .order('created_at', { ascending: false })
-      .limit(5)
-
-    if (goalsError) {
-      console.error('Error fetching goals:', goalsError)
-      return NextResponse.json(
-        { error: 'Failed to fetch goals' }, 
-        { status: 500 }
-      )
-    }
-
-    // Get recent health data (last 7 days)
-    const sevenDaysAgo = new Date()
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-
-    const { data: recentData, error: dataError } = await supabase
-      .from('health_data')
-      .select(`
-        *,
-        health_goals!inner(id, title, category)
-      `)
-      .eq('user_id', userId)
-      .gte('date', sevenDaysAgo.toISOString())
-      .order('date', { ascending: false })
-      .limit(20)
-
-    if (dataError) {
-      console.error('Error fetching recent data:', dataError)
-      return NextResponse.json(
-        { error: 'Failed to fetch recent data' }, 
-        { status: 500 }
-      )
-    }
-
-    // Calculate dashboard stats
-    const [completedGoalsCount, totalDataEntries] = await Promise.all([
-      getCompletedGoalsCount(userId),
-      getTotalDataEntries(userId)
-    ])
-
-    // Get data summary for the last 30 days
-    const thirtyDaysAgo = new Date()
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
-
-    const { data: summaryData, error: summaryError } = await supabase
-      .from('health_data')
-      .select('*')
-      .eq('user_id', userId)
-      .gte('date', thirtyDaysAgo.toISOString())
-
-    if (summaryError) {
-      console.error('Error fetching summary data:', summaryError)
-      return NextResponse.json(
-        { error: 'Failed to fetch summary data' }, 
-        { status: 500 }
-      )
-    }
-
-    // Process summary data
-    const dataSummary = processDataSummary(summaryData || [])
-
-    const stats = {
-      totalGoals: activeGoals?.length || 0,
-      completedGoals: completedGoalsCount,
-      totalDataEntries,
-      recentEntries: recentData?.length || 0,
-      lastLogin: user.last_login,
-      dataSummary
-    }
-
-    return NextResponse.json({
-      success: true,
-      dashboard: {
-        user: {
-          firstName: user.first_name,
-          lastName: user.last_name,
-          email: user.email,
-          lastLogin: user.last_login
-        },
-        stats,
-        activeGoals: activeGoals || [],
-        recentData: recentData?.slice(0, 10) || [] // Limit to 10 most recent
-      }
-    })
 
   } catch (error) {
-    console.error('Dashboard API error:', error)
+    console.error('Dashboard error:', error)
     return NextResponse.json(
       { error: 'Internal server error' }, 
       { status: 500 }
@@ -137,113 +43,170 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// GET /api/wellness/dashboard/summary - Get data summary for dashboard
-export async function GET(request: NextRequest) {
-  try {
-    const { searchParams } = new URL(request.url)
-    const userId = searchParams.get('userId')
-    const days = parseInt(searchParams.get('days') || '30')
-
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'userId is required' }, 
-        { status: 400 }
-      )
-    }
-
-    const startDate = new Date()
-    startDate.setDate(startDate.getDate() - days)
-
-    // Get health data for summary
-    const { data: healthData, error } = await supabase
-      .from('health_data')
-      .select('*')
-      .eq('user_id', userId)
-      .gte('date', startDate.toISOString())
-      .order('date', { ascending: false })
-
-    if (error) {
-      console.error('Error fetching summary data:', error)
-      return NextResponse.json(
-        { error: 'Failed to fetch summary data' }, 
-        { status: 500 }
-      )
-    }
-
-    // Process data summary
-    const summary = processDataSummary(healthData || [])
-
-    return NextResponse.json({
-      success: true,
-      summary,
-      period: `${days} days`,
-      dataPoints: healthData?.length || 0
-    })
-
-  } catch (error) {
-    console.error('Dashboard summary error:', error)
-    return NextResponse.json(
-      { error: 'Internal server error' }, 
-      { status: 500 }
-    )
-  }
-}
-
-// =============================================
-// HELPER FUNCTIONS
-// =============================================
-
-async function getCompletedGoalsCount(userId: string): Promise<number> {
-  const { count, error } = await supabase
+async function getDashboardOverview(userId: string, goalId: string | null) {
+  // Get user's health goals
+  const { data: goals, error: goalsError } = await supabase
     .from('health_goals')
-    .select('*', { count: 'exact', head: true })
+    .select('*')
     .eq('user_id', userId)
-    .eq('status', 'completed')
+    .eq('status', 'active')
 
-  if (error) {
-    console.error('Error counting completed goals:', error)
-    return 0
+  if (goalsError) {
+    console.error('Error fetching goals:', goalsError)
+    return NextResponse.json(
+      { error: 'Failed to fetch health goals' }, 
+      { status: 500 }
+    )
   }
 
-  return count || 0
-}
+  // Get recent health data
+  const thirtyDaysAgo = new Date()
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
 
-async function getTotalDataEntries(userId: string): Promise<number> {
-  const { count, error } = await supabase
+  const { data: healthData, error: dataError } = await supabase
     .from('health_data')
-    .select('*', { count: 'exact', head: true })
+    .select('*')
     .eq('user_id', userId)
+    .gte('created_at', thirtyDaysAgo.toISOString())
+    .order('created_at', { ascending: false })
+    .limit(100)
 
-  if (error) {
-    console.error('Error counting data entries:', error)
-    return 0
+  if (dataError) {
+    console.error('Error fetching health data:', dataError)
+    return NextResponse.json(
+      { error: 'Failed to fetch health data' }, 
+      { status: 500 }
+    )
   }
 
-  return count || 0
+  // Filter by goal if specified
+  let filteredData = healthData
+  if (goalId) {
+    filteredData = healthData?.filter(item => item.goal_id === goalId) || []
+  }
+
+  // Calculate dashboard metrics
+  const metrics = calculateDashboardMetrics(filteredData || [], goals || [])
+
+  return NextResponse.json({
+    success: true,
+    goals: goals || [],
+    recentData: filteredData?.slice(0, 10) || [],
+    metrics,
+    lastUpdated: new Date().toISOString()
+  })
 }
 
-function processDataSummary(healthData: any[]) {
-  // Group data by type
-  const dataByType: any = {}
-  healthData.forEach(entry => {
-    if (!dataByType[entry.data_type]) {
-      dataByType[entry.data_type] = []
+async function getDashboardSummary(userId: string, goalId: string | null) {
+  // Get comprehensive dashboard summary
+  const { data: goals, error: goalsError } = await supabase
+    .from('health_goals')
+    .select('*')
+    .eq('user_id', userId)
+
+  if (goalsError) {
+    console.error('Error fetching goals:', goalsError)
+    return NextResponse.json(
+      { error: 'Failed to fetch health goals' }, 
+      { status: 500 }
+    )
+  }
+
+  // Get health data for the last 90 days
+  const ninetyDaysAgo = new Date()
+  ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90)
+
+  const { data: healthData, error: dataError } = await supabase
+    .from('health_data')
+    .select('*')
+    .eq('user_id', userId)
+    .gte('created_at', ninetyDaysAgo.toISOString())
+
+  if (dataError) {
+    console.error('Error fetching health data:', dataError)
+    return NextResponse.json(
+      { error: 'Failed to fetch health data' }, 
+      { status: 500 }
+    )
+  }
+
+  // Filter by goal if specified
+  let filteredData = healthData
+  if (goalId) {
+    filteredData = healthData?.filter(item => item.goal_id === goalId) || []
+  }
+
+  // Calculate comprehensive summary
+  const summary = calculateComprehensiveSummary(filteredData || [], goals || [])
+
+  return NextResponse.json({
+    success: true,
+    summary,
+    dataPoints: filteredData?.length || 0,
+    period: '90 days'
+  })
+}
+
+function calculateDashboardMetrics(data: any[], goals: any[]) {
+  const dataTypes = [...new Set(data.map(item => item.data_type))]
+  const activeGoals = goals.filter(goal => goal.status === 'active')
+  
+  return {
+    totalDataPoints: data.length,
+    dataTypes: dataTypes.length,
+    activeGoals: activeGoals.length,
+    lastEntry: data.length > 0 ? data[0].created_at : null,
+    completionRate: calculateCompletionRate(data, activeGoals)
+  }
+}
+
+function calculateCompletionRate(data: any[], goals: any[]) {
+  if (goals.length === 0) return 0
+  
+  const goalIds = goals.map(goal => goal.id)
+  const goalData = data.filter(item => goalIds.includes(item.goal_id))
+  
+  // Simple completion rate calculation
+  return Math.min(100, Math.round((goalData.length / (goals.length * 30)) * 100))
+}
+
+function calculateComprehensiveSummary(data: any[], goals: any[]) {
+  const dataTypes = [...new Set(data.map(item => item.data_type))]
+  const activeGoals = goals.filter(goal => goal.status === 'active')
+  const completedGoals = goals.filter(goal => goal.status === 'completed')
+  
+  // Calculate trends for each data type
+  const trends = dataTypes.map(type => {
+    const typeData = data.filter(item => item.data_type === type)
+    return {
+      type,
+      count: typeData.length,
+      trend: calculateSimpleTrend(typeData)
     }
-    dataByType[entry.data_type].push(entry)
   })
 
-  // Calculate summary for each data type
-  const summary = {
-    totalEntries: healthData.length,
-    dataTypes: Object.keys(dataByType).length,
-    dataByType: Object.entries(dataByType).map(([type, data]: [string, any]) => ({
-      type,
-      count: data.length,
-      latestDate: data[0]?.date, // Most recent entry
-      data: data.slice(0, 5) // Latest 5 entries
-    })),
-    recentEntries: healthData.slice(0, 10) // Latest 10 entries
+  return {
+    totalGoals: goals.length,
+    activeGoals: activeGoals.length,
+    completedGoals: completedGoals.length,
+    totalDataPoints: data.length,
+    dataTypes: dataTypes.length,
+    trends,
+    averageEntriesPerDay: Math.round((data.length / 90) * 100) / 100
   }
+}
 
-  return summary
+function calculateSimpleTrend(data: any[]) {
+  if (data.length < 2) return 'insufficient_data'
+  
+  const sortedData = data.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+  const firstHalf = sortedData.slice(0, Math.floor(sortedData.length / 2))
+  const secondHalf = sortedData.slice(Math.floor(sortedData.length / 2))
+  
+  const firstAvg = firstHalf.reduce((sum, item) => sum + (item.value || 0), 0) / firstHalf.length
+  const secondAvg = secondHalf.reduce((sum, item) => sum + (item.value || 0), 0) / secondHalf.length
+  
+  const change = firstAvg > 0 ? ((secondAvg - firstAvg) / firstAvg) * 100 : 0
+  
+  return change > 5 ? 'increasing' : change < -5 ? 'decreasing' : 'stable'
 }
