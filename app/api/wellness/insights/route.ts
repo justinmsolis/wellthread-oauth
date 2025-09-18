@@ -2,9 +2,11 @@ import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import OpenAI from 'openai'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
-const supabase = createClient(supabaseUrl, supabaseServiceKey)
+const supabaseUrl = process.env.SUPABASE_URL
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+const supabase = supabaseUrl && supabaseServiceKey 
+  ? createClient(supabaseUrl, supabaseServiceKey)
+  : null
 
 // Initialize OpenAI
 const openai = new OpenAI({
@@ -18,6 +20,14 @@ const openai = new OpenAI({
 // GET /api/wellness/insights - Get AI insights
 export async function GET(request: NextRequest) {
   try {
+    // Check if Supabase is configured
+    if (!supabase) {
+      return NextResponse.json(
+        { error: 'Supabase not configured. Please set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY environment variables.' }, 
+        { status: 500 }
+      )
+    }
+
     const { searchParams } = new URL(request.url)
     const userId = searchParams.get('userId')
     const goalId = searchParams.get('goalId')
@@ -53,6 +63,14 @@ export async function GET(request: NextRequest) {
 // POST /api/wellness/insights - Generate AI insights
 export async function POST(request: NextRequest) {
   try {
+    // Check if Supabase is configured
+    if (!supabase) {
+      return NextResponse.json(
+        { error: 'Supabase not configured. Please set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY environment variables.' }, 
+        { status: 500 }
+      )
+    }
+
     const body = await request.json()
     const { userId, goalId, days = 7 } = body
 
@@ -148,7 +166,7 @@ async function getRecommendations(userId: string, goalId: string | null, days: n
 }
 
 async function getHealthData(userId: string, goalId: string | null, startDate: Date) {
-  let query = supabase
+  let query = supabase!
     .from('health_data')
     .select('*')
     .eq('user_id', userId)
@@ -172,7 +190,7 @@ async function getHealthData(userId: string, goalId: string | null, startDate: D
 async function getGoal(userId: string, goalId: string | null) {
   if (!goalId) return null
 
-  const { data, error } = await supabase
+  const { data, error } = await supabase!
     .from('health_goals')
     .select('*')
     .eq('id', goalId)
