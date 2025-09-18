@@ -12,7 +12,7 @@ const openai = new OpenAI({
 })
 
 // =============================================
-// AI INSIGHTS ENDPOINTS - Updated to fix build errors
+// AI INSIGHTS ENDPOINTS
 // =============================================
 
 // GET /api/wellness/insights - Get AI insights
@@ -248,7 +248,7 @@ async function generateRecommendations(healthData: any[], goal: any, days: numbe
   try {
     const dataSummary = prepareDataSummary(healthData, goal)
     
-    const prompt = `Based on this health data, provide 3-5 specific, actionable recommendations:
+    const prompt = `Based on this health data from the last ${days} days, provide 3-5 specific, actionable recommendations:
 
 ${JSON.stringify(dataSummary, null, 2)}
 
