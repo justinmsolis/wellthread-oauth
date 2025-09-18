@@ -1,73 +1,53 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
-const supabase = createClient(supabaseUrl, supabaseServiceKey)
+const supabaseUrl = process.env.SUPABASE_URL
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+const supabase = supabaseUrl && supabaseServiceKey 
+  ? createClient(supabaseUrl, supabaseServiceKey)
+  : null
 
 // =============================================
 // HEALTH DATA COLLECTION ENDPOINTS
 // =============================================
 
-// POST /api/wellness/data - Create new health data entry
+// POST /api/wellness/data - Log health data
 export async function POST(request: NextRequest) {
   try {
+    // Check if Supabase is configured
+    if (!supabase) {
+      return NextResponse.json(
+        { error: 'Supabase not configured. Please set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY environment variables.' }, 
+        { status: 500 }
+      )
+    }
+
     const body = await request.json()
-    const { 
-      userId, 
-      goalId, 
-      dataType, 
-      data, 
-      date, 
-      source = 'manual', 
-      tags = [] 
-    } = body
+    const { userId, dataType, value, unit, notes, goalId, timestamp } = body
 
-    // Validate required fields
-    if (!userId || !dataType || !data) {
+    if (!userId || !dataType || value === undefined) {
       return NextResponse.json(
-        { error: 'userId, dataType, and data are required' }, 
+        { error: 'userId, dataType, and value are required' }, 
         { status: 400 }
       )
-    }
-
-    // Validate dataType
-    const validDataTypes = [
-      'sleep', 'stress', 'nutrition', 'exercise', 'headache', 
-      'weather', 'blood_pressure', 'mood', 'hydration', 
-      'medication', 'symptoms', 'vitals', 'custom'
-    ]
-    
-    if (!validDataTypes.includes(dataType)) {
-      return NextResponse.json(
-        { error: `Invalid dataType. Must be one of: ${validDataTypes.join(', ')}` }, 
-        { status: 400 }
-      )
-    }
-
-    // Prepare data for insertion
-    const insertData = {
-      user_id: userId,
-      goal_id: goalId || null,
-      data_type: dataType,
-      date: date ? new Date(date).toISOString() : new Date().toISOString(),
-      data: data,
-      source: source,
-      tags: tags,
-      is_private: false,
-      // Store structured data based on type
-      [`${dataType}_data`]: data
     }
 
     // Insert health data
-    const { data: healthData, error } = await supabase
+    const { data, error } = await supabase
       .from('health_data')
-      .insert([insertData])
+      .insert({
+        user_id: userId,
+        data_type: dataType,
+        value: value,
+        unit: unit || null,
+        notes: notes || null,
+        goal_id: goalId || null,
+        created_at: timestamp || new Date().toISOString()
+      })
       .select()
-      .single()
 
     if (error) {
-      console.error('Error creating health data:', error)
+      console.error('Error inserting health data:', error)
       return NextResponse.json(
         { error: 'Failed to save health data' }, 
         { status: 500 }
@@ -76,12 +56,12 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: 'Health data saved successfully',
-      data: healthData
+      data: data[0],
+      message: 'Health data saved successfully'
     })
 
   } catch (error) {
-    console.error('Health data API error:', error)
+    console.error('Health data error:', error)
     return NextResponse.json(
       { error: 'Internal server error' }, 
       { status: 500 }
@@ -89,17 +69,23 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// GET /api/wellness/data - Get health data with filtering
+// GET /api/wellness/data - Get health data
 export async function GET(request: NextRequest) {
   try {
+    // Check if Supabase is configured
+    if (!supabase) {
+      return NextResponse.json(
+        { error: 'Supabase not configured. Please set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY environment variables.' }, 
+        { status: 500 }
+      )
+    }
+
     const { searchParams } = new URL(request.url)
     const userId = searchParams.get('userId')
     const goalId = searchParams.get('goalId')
     const dataType = searchParams.get('dataType')
-    const startDate = searchParams.get('startDate')
-    const endDate = searchParams.get('endDate')
-    const limit = parseInt(searchParams.get('limit') || '50')
-    const page = parseInt(searchParams.get('page') || '1')
+    const limit = parseInt(searchParams.get('limit') || '100')
+    const days = parseInt(searchParams.get('days') || '30')
 
     if (!userId) {
       return NextResponse.json(
@@ -108,27 +94,27 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Build query
+    // Calculate date range
+    const startDate = new Date()
+    startDate.setDate(startDate.getDate() - days)
+
     let query = supabase
       .from('health_data')
-      .select(`
-        *,
-        health_goals!inner(id, title, category)
-      `)
+      .select('*')
       .eq('user_id', userId)
+      .gte('created_at', startDate.toISOString())
+      .order('created_at', { ascending: false })
+      .limit(limit)
 
-    if (goalId) query = query.eq('goal_id', goalId)
-    if (dataType) query = query.eq('data_type', dataType)
-    if (startDate) query = query.gte('date', new Date(startDate).toISOString())
-    if (endDate) query = query.lte('date', new Date(endDate).toISOString())
+    if (goalId) {
+      query = query.eq('goal_id', goalId)
+    }
 
-    // Add pagination
-    const offset = (page - 1) * limit
-    query = query
-      .order('date', { ascending: false })
-      .range(offset, offset + limit - 1)
+    if (dataType) {
+      query = query.eq('data_type', dataType)
+    }
 
-    const { data, error, count } = await query
+    const { data, error } = await query
 
     if (error) {
       console.error('Error fetching health data:', error)
@@ -141,104 +127,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       data: data || [],
-      pagination: {
-        current: page,
-        pages: Math.ceil((count || 0) / limit),
-        total: count || 0,
-        limit: limit
-      }
+      count: data?.length || 0,
+      period: `${days} days`
     })
 
   } catch (error) {
     console.error('Health data fetch error:', error)
-    return NextResponse.json(
-      { error: 'Internal server error' }, 
-      { status: 500 }
-    )
-  }
-}
-
-// PUT /api/wellness/data/[id] - Update health data entry
-export async function PUT(request: NextRequest) {
-  try {
-    const body = await request.json()
-    const { id, data, date, tags } = body
-
-    if (!id) {
-      return NextResponse.json(
-        { error: 'id is required' }, 
-        { status: 400 }
-      )
-    }
-
-    const updates: any = {}
-    if (data !== undefined) updates.data = data
-    if (date !== undefined) updates.date = new Date(date).toISOString()
-    if (tags !== undefined) updates.tags = tags
-
-    const { data: healthData, error } = await supabase
-      .from('health_data')
-      .update(updates)
-      .eq('id', id)
-      .select()
-      .single()
-
-    if (error) {
-      console.error('Error updating health data:', error)
-      return NextResponse.json(
-        { error: 'Failed to update health data' }, 
-        { status: 500 }
-      )
-    }
-
-    return NextResponse.json({
-      success: true,
-      message: 'Health data updated successfully',
-      data: healthData
-    })
-
-  } catch (error) {
-    console.error('Health data update error:', error)
-    return NextResponse.json(
-      { error: 'Internal server error' }, 
-      { status: 500 }
-    )
-  }
-}
-
-// DELETE /api/wellness/data/[id] - Delete health data entry
-export async function DELETE(request: NextRequest) {
-  try {
-    const { searchParams } = new URL(request.url)
-    const id = searchParams.get('id')
-
-    if (!id) {
-      return NextResponse.json(
-        { error: 'id is required' }, 
-        { status: 400 }
-      )
-    }
-
-    const { error } = await supabase
-      .from('health_data')
-      .delete()
-      .eq('id', id)
-
-    if (error) {
-      console.error('Error deleting health data:', error)
-      return NextResponse.json(
-        { error: 'Failed to delete health data' }, 
-        { status: 500 }
-      )
-    }
-
-    return NextResponse.json({
-      success: true,
-      message: 'Health data deleted successfully'
-    })
-
-  } catch (error) {
-    console.error('Health data delete error:', error)
     return NextResponse.json(
       { error: 'Internal server error' }, 
       { status: 500 }

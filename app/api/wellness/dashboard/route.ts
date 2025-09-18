@@ -1,9 +1,11 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
-const supabase = createClient(supabaseUrl, supabaseServiceKey)
+const supabaseUrl = process.env.SUPABASE_URL
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+const supabase = supabaseUrl && supabaseServiceKey 
+  ? createClient(supabaseUrl, supabaseServiceKey)
+  : null
 
 // =============================================
 // DASHBOARD ENDPOINTS
@@ -12,6 +14,14 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey)
 // GET /api/wellness/dashboard - Get dashboard data
 export async function GET(request: NextRequest) {
   try {
+    // Check if Supabase is configured
+    if (!supabase) {
+      return NextResponse.json(
+        { error: 'Supabase not configured. Please set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY environment variables.' }, 
+        { status: 500 }
+      )
+    }
+
     const { searchParams } = new URL(request.url)
     const userId = searchParams.get('userId')
     const goalId = searchParams.get('goalId')
@@ -45,7 +55,7 @@ export async function GET(request: NextRequest) {
 
 async function getDashboardOverview(userId: string, goalId: string | null) {
   // Get user's health goals
-  const { data: goals, error: goalsError } = await supabase
+  const { data: goals, error: goalsError } = await supabase!
     .from('health_goals')
     .select('*')
     .eq('user_id', userId)
@@ -63,7 +73,7 @@ async function getDashboardOverview(userId: string, goalId: string | null) {
   const thirtyDaysAgo = new Date()
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
 
-  const { data: healthData, error: dataError } = await supabase
+  const { data: healthData, error: dataError } = await supabase!
     .from('health_data')
     .select('*')
     .eq('user_id', userId)
@@ -99,7 +109,7 @@ async function getDashboardOverview(userId: string, goalId: string | null) {
 
 async function getDashboardSummary(userId: string, goalId: string | null) {
   // Get comprehensive dashboard summary
-  const { data: goals, error: goalsError } = await supabase
+  const { data: goals, error: goalsError } = await supabase!
     .from('health_goals')
     .select('*')
     .eq('user_id', userId)
@@ -116,7 +126,7 @@ async function getDashboardSummary(userId: string, goalId: string | null) {
   const ninetyDaysAgo = new Date()
   ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90)
 
-  const { data: healthData, error: dataError } = await supabase
+  const { data: healthData, error: dataError } = await supabase!
     .from('health_data')
     .select('*')
     .eq('user_id', userId)
