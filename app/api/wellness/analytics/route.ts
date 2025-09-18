@@ -16,7 +16,6 @@ export async function GET(request: NextRequest) {
     const userId = searchParams.get('userId')
     const goalId = searchParams.get('goalId')
     const dataType = searchParams.get('dataType')
-    const period = searchParams.get('period') || 'month'
     const days = parseInt(searchParams.get('days') || '30')
     const endpoint = searchParams.get('endpoint') || 'trends'
 
@@ -28,19 +27,19 @@ export async function GET(request: NextRequest) {
     }
 
     // Calculate date range
-    let startDate = new Date()
+    const startDate = new Date()
     startDate.setDate(startDate.getDate() - days)
 
     // Route to different analytics functions based on endpoint
     switch (endpoint) {
       case 'trends':
-        return await getTrends(userId, goalId, dataType, period, days, startDate)
+        return await getTrends(userId, goalId, dataType, days, startDate)
       case 'correlations':
         return await getCorrelations(userId, goalId, startDate)
       case 'summary':
         return await getSummary(userId, goalId, startDate)
       default:
-        return await getTrends(userId, goalId, dataType, period, days, startDate)
+        return await getTrends(userId, goalId, dataType, days, startDate)
     }
 
   } catch (error) {
@@ -52,7 +51,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-async function getTrends(userId: string, goalId: string | null, dataType: string | null, period: string, days: number, startDate: Date) {
+async function getTrends(userId: string, goalId: string | null, dataType: string | null, days: number, startDate: Date) {
   // Get health data for the specified period
   const { data: healthData, error } = await supabase
     .from('health_data')
@@ -81,12 +80,12 @@ async function getTrends(userId: string, goalId: string | null, dataType: string
   }
 
   // Calculate trends based on period
-  const trends = calculateTrends(filteredData || [], period)
+  const trends = calculateTrends(filteredData || [])
 
   return NextResponse.json({
     success: true,
     trends,
-    period,
+    days,
     startDate: startDate.toISOString(),
     endDate: new Date().toISOString(),
     dataPoints: filteredData?.length || 0
@@ -157,7 +156,7 @@ async function getSummary(userId: string, goalId: string | null, startDate: Date
   })
 }
 
-function calculateTrends(data: any[], period: string) {
+function calculateTrends(data: any[]) {
   // Simple trend calculation - can be enhanced
   if (data.length === 0) return { trend: 'no_data', change: 0 }
 
@@ -211,9 +210,6 @@ function calculateCorrelations(data: any[]) {
 function calculateSimpleCorrelation(data1: any[], data2: any[]) {
   // Simplified correlation calculation
   if (data1.length === 0 || data2.length === 0) return 0
-  
-  const avg1 = data1.reduce((sum, item) => sum + (item.value || 0), 0) / data1.length
-  const avg2 = data2.reduce((sum, item) => sum + (item.value || 0), 0) / data2.length
   
   // This is a very simplified correlation - in production you'd want proper statistical correlation
   return Math.random() * 0.8 - 0.4 // Placeholder correlation
