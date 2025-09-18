@@ -310,6 +310,7 @@ function prepareDataSummary(healthData: any[], goal: any) {
   const summary: any = {
     totalEntries: healthData.length,
     dataTypes: dataTypes.length,
+    goalTitle: goal ? goal.title : 'General wellness',
     dateRange: {
       start: healthData.length > 0 ? healthData[healthData.length - 1].created_at : null,
       end: healthData.length > 0 ? healthData[0].created_at : null
