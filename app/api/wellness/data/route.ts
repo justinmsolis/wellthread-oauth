@@ -23,6 +23,8 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
+    console.log('📥 Received health data request:', JSON.stringify(body, null, 2))
+    
     const { userId, dataType, value, unit, notes, goalId, timestamp } = body
 
     if (!userId || !dataType || value === undefined) {
@@ -38,18 +40,22 @@ export async function POST(request: NextRequest) {
       .insert({
         user_id: userId,
         data_type: dataType,
-        value: value,
+        data: value,  // Map 'value' to 'data' column
         unit: unit || null,
         notes: notes || null,
         goal_id: goalId || null,
-        created_at: timestamp || new Date().toISOString()
+        date: timestamp || new Date().toISOString(),
+        source: 'manual',
+        tags: [],
+        is_private: false
       })
       .select()
 
     if (error) {
-      console.error('Error inserting health data:', error)
+      console.error('❌ Database error:', JSON.stringify(error, null, 2))
+      console.error('❌ Error details:', error.message, error.details, error.hint)
       return NextResponse.json(
-        { error: 'Failed to save health data' }, 
+        { error: 'Failed to save health data', details: error.message }, 
         { status: 500 }
       )
     }
