@@ -60,11 +60,15 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    return NextResponse.json({
+    const response = {
       success: true,
-      data: data[0],
+      data: data,  // Return array as expected by frontend
       message: 'Health data saved successfully'
-    })
+    }
+    
+    console.log('✅ Successfully saved health data:', JSON.stringify(response, null, 2))
+    
+    return NextResponse.json(response)
 
   } catch (error) {
     console.error('Health data error:', error)
